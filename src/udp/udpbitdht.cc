@@ -163,6 +163,18 @@ void UdpBitDht::ConnectionOptions(uint32_t allowedModes, uint32_t flags)
 	mBitDhtManager->ConnectionOptions(allowedModes, flags);
 }
 
+void UdpBitDht::setOwnNickname(const std::string& nickname)
+{
+	bdStackMutex stack(dhtMtx);
+	mBitDhtManager->setOwnNickname(nickname);
+}
+
+std::string UdpBitDht::getConnectNickname(const bdNodeId& id)
+{
+	bdStackMutex stack(dhtMtx);
+	return mBitDhtManager->connectNickname(id);
+}
+
 bool UdpBitDht::setAttachMode(bool on)
 {
 	bdStackMutex stack(dhtMtx); /********** MUTEX LOCKED *************/

@@ -153,6 +153,8 @@ class bdNode: public bdNodePublisher
 	virtual void send_query(bdId *id, bdNodeId *targetNodeId, bool localnet); /* message out */
 	virtual void send_connect_msg(bdId *id, int msgtype, 
 				bdId *srcAddr, bdId *destAddr, int mode, int param, int status);
+	void setOwnNickname(const std::string& nickname) { mOwnNickname = nickname; }
+	std::string connectNickname(const bdNodeId& id) const;
 
 // This is implemented in bdManager.
 //        virtual void callbackConnect(bdId *srcId, bdId *proxyId, bdId *destId,
@@ -214,7 +216,10 @@ void	recvPkt(char *msg, int len, struct sockaddr_in addr);
 	void msgout_connect_genmsg(bdId *id, bdToken *transId, int msgtype, 
 				bdId *srcAddr, bdId *destAddr, int mode, int param, int status);
 	void msgin_connect_genmsg(bdId *id, bdToken *transId, int msgtype,
-                                        bdId *srcAddr, bdId *destAddr, int mode, int param, int status);
+					bdId *srcAddr, bdId *destAddr, int mode, int param, int status, const std::string& nickname);
+
+	std::string mOwnNickname;
+	std::map<bdNodeId, std::string> mConnectNicknames;
 
 
 

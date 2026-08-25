@@ -976,6 +976,12 @@ int bitdht_find_node_msg(bdToken *tid, bdNodeId *id, bdNodeId *target,
 
 int bitdht_connect_genmsg(bdToken *tid, bdNodeId *id, int msgtype, bdId *src, bdId *dest, int mode, int param, int status, char *msg, int avail)
 {
+	return bitdht_connect_genmsg(tid, id, msgtype, src, dest, mode, param,
+	                            status, std::string(), msg, avail);
+}
+
+int bitdht_connect_genmsg(bdToken *tid, bdNodeId *id, int msgtype, bdId *src, bdId *dest, int mode, int param, int status, const std::string& nickname, char *msg, int avail)
+{
 #ifdef DEBUG_MSGS
 	fprintf(stderr, "bitdht_connect_genmsg()\n");
 #endif
@@ -1007,6 +1013,9 @@ int bitdht_connect_genmsg(bdToken *tid, bdNodeId *id, int msgtype, bdId *src, bd
 	be_add_keypair(iddict, "param", paramnode);
 	be_add_keypair(iddict, "status", statusnode);
 	be_add_keypair(iddict, "type", typenode);
+	/* Optional extension. Older implementations ignore unknown dictionary keys. */
+	if(msgtype == BITDHT_MSG_TYPE_CONNECT_REQUEST && !nickname.empty())
+		be_add_keypair(iddict, "nick", be_create_str_wlen(nickname.data(), nickname.size()));
 
 	be_add_keypair(dict, "a", iddict);
 	

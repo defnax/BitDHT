@@ -1443,6 +1443,7 @@ void    bdNode::recvPkt(char *msg, int len, struct sockaddr_in addr)
 	uint32_t connParam = 0;
 	uint32_t connStatus;
 	uint32_t connType;
+	std::string connNickname;
 
 	be_node  *be_ConnSrcAddr = NULL;
 	be_node  *be_ConnDestAddr = NULL;
@@ -1523,6 +1524,11 @@ void    bdNode::recvPkt(char *msg, int len, struct sockaddr_in addr)
 			be_free(node);
 			return;
 		}
+
+		/* Optional, bounded nickname extension. */
+		be_node *beNickname = beMsgGetDictNode(be_data, "nick");
+		if(beNickname && beNickname->type == BE_STR && be_str_len(beNickname) <= 255)
+			connNickname.assign(beNickname->val.s, be_str_len(beNickname));
 	}
 
 	if (be_ConnSrcAddr)
@@ -1693,7 +1699,7 @@ void    bdNode::recvPkt(char *msg, int len, struct sockaddr_in addr)
 #endif
 			msgin_connect_genmsg(&srcId, &transId, connType,
 					&connSrcAddr, &connDestAddr, 
-					connMode, connParam, connStatus);
+					connMode, connParam, connStatus, connNickname);
 			break;
 		}
 		default:
@@ -2145,13 +2151,19 @@ void bdNode::msgout_connect_genmsg(bdId *id, bdToken *transId, int msgtype, bdId
         char msg[10240];
         int avail = 10240;
 
-        int blen = bitdht_connect_genmsg(transId, &(mOwnId), msgtype, srcAddr, destAddr, mode, param, status, msg, avail-1);
+		std::string nickname;
+		if(msgtype == BITDHT_MSG_TYPE_CONNECT_REQUEST)
+		{
+			if(srcAddr->id == mOwnId) nickname = mOwnNickname;
+			else nickname = connectNickname(srcAddr->id); // preserve through a proxy
+		}
+        int blen = bitdht_connect_genmsg(transId, &(mOwnId), msgtype, srcAddr, destAddr, mode, param, status, nickname, msg, avail-1);
         sendPkt(msg, blen, id->addr);
 }
 
 
 void bdNode::msgin_connect_genmsg(bdId *id, bdToken *transId, int msgtype, 
-					bdId *srcAddr, bdId *destAddr, int mode, int param, int status)
+					bdId *srcAddr, bdId *destAddr, int mode, int param, int status, const std::string& nickname)
 {
 	std::list<bdId>::iterator it;
 
@@ -2178,6 +2190,13 @@ void bdNode::msgin_connect_genmsg(bdId *id, bdToken *transId, int msgtype,
 	switch(msgtype)
 	{
 		case BITDHT_MSG_TYPE_CONNECT_REQUEST:
+			if(!nickname.empty())
+			{
+				if(mConnectNicknames.size() >= 1024 &&
+				        mConnectNicknames.find(srcAddr->id) == mConnectNicknames.end())
+					mConnectNicknames.erase(mConnectNicknames.begin());
+				mConnectNicknames[srcAddr->id] = nickname;
+			}
 			peerflags = BITDHT_PEER_STATUS_RECV_CONNECT_MSG; 
 			mAccount.incCounter(BDACCOUNT_MSG_CONNECTREQUEST, false);
 
@@ -2213,6 +2232,12 @@ void bdNode::msgin_connect_genmsg(bdId *id, bdToken *transId, int msgtype,
 	/* received message - so peer must be good */
 	addPeer(id, peerflags);
 
+}
+
+std::string bdNode::connectNickname(const bdNodeId& id) const
+{
+	auto it = mConnectNicknames.find(id);
+	return it == mConnectNicknames.end() ? std::string() : it->second;
 }
 
 

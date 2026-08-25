@@ -125,6 +125,8 @@ virtual bool ConnectionRequest(struct sockaddr_in *laddr, bdNodeId *target, uint
 virtual void ConnectionAuth(bdId *srcId, bdId *proxyId, bdId *destId, 
 						uint32_t mode, uint32_t loc, uint32_t bandwidth, uint32_t delay, uint32_t answer);
 virtual void ConnectionOptions(uint32_t allowedModes, uint32_t flags);
+virtual void setOwnNickname(const std::string& nickname) { bdNode::setOwnNickname(nickname); }
+virtual std::string getConnectNickname(const bdNodeId& id) { return connectNickname(id); }
 
 virtual bool setAttachMode(bool on);
 
