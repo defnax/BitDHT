@@ -23,7 +23,12 @@
  */
 
 #include "bitdht/bencode.h"
+/* Assertions perform the checks and must also run in release builds. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
+#include <errno.h>
 #include <limits.h>
 #include <string.h>
 #ifdef _WIN32
@@ -62,21 +67,51 @@ static be_node *decode(const char *text, size_t len)
 
 int main(void)
 {
-    const char *bad[] = {"", "i", "i123", "i-", "ie", "i+1e", "i 1e",
+    const char *bad[] = {"", "i", "i123", "i-", "ie", "i+e", "i-e", "i e", "i \t+e",
+        "i1 e", "i1:", "i1:e", "i1xe", "1e", "1x:a", "d:ai1ee",
         "i9223372036854775808e", "i-9223372036854775809e", "123", "1:",
         "999999999999999999999999:", "l", "li1e", "d", "d1:a", "d1:ai1e", "d1:ae"};
     for (size_t i = 0; i < sizeof(bad)/sizeof(*bad); ++i)
         assert(decode(bad[i], strlen(bad[i])) == NULL);
     const char *good[] = {"i0e", "i-1e", "i9223372036854775807e", "i-9223372036854775808e",
-        "0:", "3:abc", "le", "de", "li1ee", "d1:ai1ee", "d1:ald1:bi2eeee"};
+        "0:", "3:abc", "le", "de", "li1ee", "d1:ai1ee", "d1:ald1:bi2eeee",
+        "i+1e", "i 1e", "i \t\n\r\v\f+42e", "i  -42e"};
     for (size_t i = 0; i < sizeof(good)/sizeof(*good); ++i) {
         size_t len = strlen(good[i]);
+        errno = ERANGE; /* A previous range error must not reject a valid number. */
         be_node *n = decode(good[i], len);
         assert(n);
         if (i == 2) assert(n->val.i == LLONG_MAX);
         if (i == 3) assert(n->val.i == LLONG_MIN);
+        if (i == 11 || i == 12) assert(n->val.i == 1);
+        if (i == 13) assert(n->val.i == 42);
+        if (i == 14) assert(n->val.i == -42);
         be_free(n);
         for (size_t j = 0; j < len; ++j) assert(decode(good[i], j) == NULL);
+    }
+    /* strtoll must not accept a partial field ending at an embedded NUL. */
+    const char nul_integer[] = {'i', '1', '\0', 'e'};
+    const char nul_length[] = {'1', '\0', ':', 'a'};
+    assert(decode(nul_integer, sizeof(nul_integer)) == NULL);
+    assert(decode(nul_length, sizeof(nul_length)) == NULL);
+
+    /* String contents are binary, unlike their numeric length prefix. */
+    const char binary_string[] = {'3', ':', 'a', '\0', 'b'};
+    be_node *n = decode(binary_string, sizeof(binary_string));
+    assert(n && n->type == BE_STR && be_str_len(n) == 3);
+    assert(memcmp(n->val.s, binary_string + 2, 3) == 0);
+    be_free(n);
+
+    /* Keep strtoll's acceptance of long whitespace and leading-zero prefixes. */
+    char long_integer[260];
+    long_integer[0] = 'i';
+    for (size_t i = 0; i < 2; ++i) {
+        memset(long_integer + 1, i ? '0' : ' ', 256);
+        memcpy(long_integer + 257, "42e", 3);
+        n = decode(long_integer, sizeof(long_integer));
+        assert(n && n->type == BE_INT && n->val.i == 42);
+        be_free(n);
+        assert(decode(long_integer, sizeof(long_integer) - 1) == NULL);
     }
     assert(be_decoden(NULL, 1) == NULL);
     assert(be_decoden("i1e", -1) == NULL);

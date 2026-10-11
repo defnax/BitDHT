@@ -28,9 +28,10 @@
  * your changes into the public domain as well).
  */
 
-#include <limits.h>
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h> /* malloc() realloc() free() */
+#include <stdlib.h> /* malloc() realloc() free() strtoll() */
 #include <string.h> /* memset() */
 #include "util/bdstring.h"
 
@@ -55,35 +56,34 @@ static be_node *be_alloc(be_type type)
 	return ret;
 }
 
-/* Parse within the supplied packet; no NUL terminator is required. */
+/* Bound the numeric field before strtoll(), which has no length argument.
+ * The delimiter is 'e' for integers and ':' for string lengths.
+ */
 static int _be_decode_int(const char **data, long long *data_len,
-                          long long *result)
+                          long long *result, char delimiter)
 {
-	const char *p = *data;
-	long long remaining = *data_len;
-	int negative = 0;
-	unsigned long long value = 0;
-	unsigned long long limit;
-	if (remaining <= 0) return 0;
-	if (*p == '-') { negative = 1; ++p; --remaining; }
-	if (remaining <= 0 || *p < '0' || *p > '9') return 0;
-	limit = (unsigned long long) LLONG_MAX + negative;
-	while (remaining > 0 && *p >= '0' && *p <= '9') {
-		unsigned int digit = *p - '0';
-		if (value > (limit - digit) / 10) return 0;
-		value = value * 10 + digit;
-		++p;
-		--remaining;
-	}
-	/* A length separator or integer terminator must still be in bounds. */
-	if (remaining <= 0) return 0;
-	if (negative)
-		*result = value == (unsigned long long) LLONG_MAX + 1
-		          ? LLONG_MIN : -(long long)value;
-	else
-		*result = (long long)value;
-	*data = p;
-	*data_len = remaining;
+	if (*data_len <= 0 || (unsigned long long)*data_len > SIZE_MAX)
+		return 0;
+	const char *end = (const char *)memchr(*data, delimiter, (size_t)*data_len);
+	if (!end || end == *data) return 0;
+
+	/* The delimiter is in bounds, so length + 1 cannot overflow size_t. */
+	size_t length = end - *data;
+	char *number = (char *)malloc(length + 1);
+	if (!number) return 0;
+	memcpy(number, *data, length);
+	number[length] = '\0';
+
+	char *endp;
+	errno = 0;
+	long long value = strtoll(number, &endp, 10);
+	int valid = endp != number && errno != ERANGE && endp == number + length;
+	free(number);
+	if (!valid) return 0;
+
+	*result = value;
+	*data = end;
+	*data_len -= length;
 	return 1;
 }
 
@@ -101,7 +101,7 @@ static char *_be_decode_str(const char **data, long long *data_len)
 	fprintf(stderr, "bencode::_be_decode_str(pnt: %p, rem: %lld)\n", *data, *data_len);
 #endif
 	long long sllen;
-	if (!_be_decode_int(data, data_len, &sllen)) return NULL;
+	if (!_be_decode_int(data, data_len, &sllen, ':')) return NULL;
 	long slen = sllen;
 	unsigned long len;
 	char *ret = NULL;
@@ -293,7 +293,7 @@ static be_node *_be_decode(const char **data, long long *data_len)
 
 			--(*data_len);
 			++(*data);
-			if (!_be_decode_int(data, data_len, &ret->val.i) || **data != 'e')
+			if (!_be_decode_int(data, data_len, &ret->val.i, 'e') || **data != 'e')
 			{
 #ifdef BE_DEBUG_DECODE 
 				fprintf(stderr, "bencode::_be_decode() reject data != e - kill\n");
